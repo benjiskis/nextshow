@@ -247,6 +247,16 @@ a {
   color: var(--accent-hover);
 }
 
+.check-shows-btn {
+  display: block;
+  margin-top: 0.75rem;
+}
+
+.check-shows-btn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
 .error-text {
   color: var(--danger);
   font-size: 0.85rem;

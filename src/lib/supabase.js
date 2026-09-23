@@ -2,6 +2,7 @@
 // Data layer — matches schema.sql v1.0.1
 
 import { createClient } from '@supabase/supabase-js'
+import { fetchTicketmasterShows } from './ticketmaster'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -112,12 +113,38 @@ export async function findOrCreateArtistFromTicketmaster({ name, ticketmasterId,
 export async function getWishlist(userId) {
   const { data, error } = await supabase
     .from('wishlist_items')
-    .select('artist_id, artists (id, name)')
+    .select('artist_id, artists (id, name, ticketmaster_id)')
     .eq('user_id', userId)
     .order('created_at')
 
   if (error) throw error
   return data.map((row) => row.artists)
+}
+
+// Client-side, single-artist version of scripts/ingest-ticketmaster.mjs —
+// backs the temporary "Check for shows" CTA that runs when an artist has
+// never been through ingestion yet (no ticketmaster_id). Ticketmaster
+// only; Jambase's key stays server-only. Remove this CTA (and this
+// function, if unused elsewhere) once scheduled ingestion is reliable
+// enough in production that a manual per-artist check isn't needed.
+export async function ingestArtistFromTicketmaster(artist) {
+  const { ticketmasterId, imageUrl, rows } = await fetchTicketmasterShows(artist)
+
+  if (ticketmasterId && ticketmasterId !== artist.ticketmaster_id) {
+    const update = { ticketmaster_id: ticketmasterId }
+    if (imageUrl) update.logo_url = imageUrl
+    const { error } = await supabase.from('artists').update(update).eq('id', artist.id)
+    if (error) throw error
+  }
+
+  if (rows.length > 0) {
+    const { error } = await supabase
+      .from('shows')
+      .upsert(rows, { onConflict: 'source,source_event_id' })
+    if (error) throw error
+  }
+
+  return { resolved: ticketmasterId != null, upserted: rows.length }
 }
 
 export async function addToWishlist(userId, artistId) {

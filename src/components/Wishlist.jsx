@@ -7,8 +7,12 @@ import {
   getWishlist,
   addToWishlist,
   removeFromWishlist,
+  ingestArtistFromTicketmaster,
 } from '../lib/supabase'
 import { searchTicketmasterArtists } from '../lib/ticketmaster'
+
+const CHECK_DELAY_MS = 300
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export default function Wishlist({ userId, onChange }) {
   const [wishlist, setWishlist] = useState([])
@@ -17,6 +21,7 @@ export default function Wishlist({ userId, onChange }) {
   const [results, setResults] = useState([])
   const [externalResults, setExternalResults] = useState([])
   const [searching, setSearching] = useState(false)
+  const [checking, setChecking] = useState(false)
 
   useEffect(() => {
     getWishlist(userId)
@@ -73,8 +78,27 @@ export default function Wishlist({ userId, onChange }) {
     onChange?.()
   }
 
+  async function handleCheckForShows() {
+    setChecking(true)
+    try {
+      for (const artist of wishlist.filter((a) => !a.ticketmaster_id)) {
+        try {
+          await ingestArtistFromTicketmaster(artist)
+        } catch (err) {
+          console.error(`Check for shows failed for ${artist.name}:`, err)
+        }
+        await sleep(CHECK_DELAY_MS)
+      }
+      setWishlist(await getWishlist(userId))
+      onChange?.()
+    } finally {
+      setChecking(false)
+    }
+  }
+
   const onWishlist = new Set(wishlist.map((artist) => artist.id))
   const trimmedQuery = query.trim()
+  const unchecked = wishlist.filter((artist) => !artist.ticketmaster_id)
 
   return (
     <div>
@@ -141,6 +165,12 @@ export default function Wishlist({ userId, onChange }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {unchecked.length > 0 && (
+        <button className="btn-link check-shows-btn" onClick={handleCheckForShows} disabled={checking}>
+          {checking ? 'Checking…' : `Check for shows (${unchecked.length} new)`}
+        </button>
       )}
     </div>
   )

@@ -88,9 +88,11 @@ async function resolveAttraction(artist) {
   const body = await res.json()
 
   const attractions = body._embedded?.attractions ?? []
-  const match = attractions.find(
-    (a) => a.name.toLowerCase() === artist.name.toLowerCase()
-  )
+  // Prefer an exact name match, but fall back to the top keyword result —
+  // a freeform-typed artist name (e.g. "Weird Al") will rarely exactly
+  // equal Ticketmaster's canonical name ("Weird Al Yankovic").
+  const match =
+    attractions.find((a) => a.name.toLowerCase() === artist.name.toLowerCase()) ?? attractions[0]
   if (!match) return { attractionId: null, imageUrl: null }
 
   const imageUrl = pickImage(match.images)
