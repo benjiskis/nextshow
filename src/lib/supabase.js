@@ -81,6 +81,34 @@ export async function findOrCreateArtist(name) {
   return data
 }
 
+// Same case-insensitive-exact-match-first dedup as findOrCreateArtist,
+// but also checks ticketmaster_id — a Ticketmaster typeahead pick should
+// resolve to an existing row even if its stored name differs slightly
+// (e.g. punctuation) from what Ticketmaster returns today. Inserts with
+// ticketmaster_id + logo_url pre-populated so the next ingestion run
+// skips straight to fetching events, no name-matching required.
+export async function findOrCreateArtistFromTicketmaster({ name, ticketmasterId, imageUrl }) {
+  const trimmed = name.trim()
+
+  const { data: existing, error: findError } = await supabase
+    .from('artists')
+    .select('*')
+    .or(`ticketmaster_id.eq.${ticketmasterId},name.ilike.${trimmed}`)
+    .limit(1)
+
+  if (findError) throw findError
+  if (existing.length > 0) return existing[0]
+
+  const { data, error } = await supabase
+    .from('artists')
+    .insert({ name: trimmed, ticketmaster_id: ticketmasterId, logo_url: imageUrl })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export async function getWishlist(userId) {
   const { data, error } = await supabase
     .from('wishlist_items')
