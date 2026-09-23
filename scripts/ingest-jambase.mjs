@@ -167,16 +167,28 @@ function toShowRow(event, artistId) {
   }
 }
 
+// Marks the artist as checked regardless of outcome — a genuine "no
+// match" or "zero events" result is still a completed check.
+async function markChecked(artistId) {
+  const { error } = await supabase
+    .from('artists')
+    .update({ jambase_checked_at: new Date().toISOString() })
+    .eq('id', artistId)
+  if (error) throw error
+}
+
 async function ingestArtist(artist) {
   const { jambaseId } = await resolveArtist(artist)
   if (!jambaseId) {
     console.log(`  ${artist.name}: no Jambase match, skipping`)
+    await markChecked(artist.id)
     return { upserted: 0 }
   }
 
   const events = await fetchEvents(jambaseId)
   if (events.length === 0) {
     console.log(`  ${artist.name}: 0 upcoming events`)
+    await markChecked(artist.id)
     return { upserted: 0 }
   }
 
@@ -189,6 +201,7 @@ async function ingestArtist(artist) {
     .upsert(rows, { onConflict: 'source,source_event_id' })
 
   if (error) throw error
+  await markChecked(artist.id)
 
   console.log(`  ${artist.name}: upserted ${rows.length} shows`)
   return { upserted: rows.length }

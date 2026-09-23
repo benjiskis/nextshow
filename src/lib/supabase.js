@@ -113,7 +113,7 @@ export async function findOrCreateArtistFromTicketmaster({ name, ticketmasterId,
 export async function getWishlist(userId) {
   const { data, error } = await supabase
     .from('wishlist_items')
-    .select('artist_id, artists (id, name, ticketmaster_id)')
+    .select('artist_id, artists (id, name, ticketmaster_id, ticketmaster_checked_at)')
     .eq('user_id', userId)
     .order('created_at')
 
@@ -122,20 +122,24 @@ export async function getWishlist(userId) {
 }
 
 // Client-side, single-artist version of scripts/ingest-ticketmaster.mjs —
-// backs the temporary "Check for shows" CTA that runs when an artist has
-// never been through ingestion yet (no ticketmaster_id). Ticketmaster
-// only; Jambase's key stays server-only. Remove this CTA (and this
-// function, if unused elsewhere) once scheduled ingestion is reliable
-// enough in production that a manual per-artist check isn't needed.
+// backs the temporary "Check for shows" CTA that runs when an artist's
+// shows have never actually been fetched from Ticketmaster yet (no
+// ticketmaster_checked_at — NOT the same as having no ticketmaster_id:
+// adding an artist via the live typeahead resolves its ID immediately
+// but doesn't fetch its shows). Ticketmaster only; Jambase's key stays
+// server-only. Remove this CTA (and this function, if unused elsewhere)
+// once scheduled ingestion is reliable enough in production that a
+// manual per-artist check isn't needed.
 export async function ingestArtistFromTicketmaster(artist) {
   const { ticketmasterId, imageUrl, rows } = await fetchTicketmasterShows(artist)
 
+  const update = { ticketmaster_checked_at: new Date().toISOString() }
   if (ticketmasterId && ticketmasterId !== artist.ticketmaster_id) {
-    const update = { ticketmaster_id: ticketmasterId }
+    update.ticketmaster_id = ticketmasterId
     if (imageUrl) update.logo_url = imageUrl
-    const { error } = await supabase.from('artists').update(update).eq('id', artist.id)
-    if (error) throw error
   }
+  const { error: updateError } = await supabase.from('artists').update(update).eq('id', artist.id)
+  if (updateError) throw updateError
 
   if (rows.length > 0) {
     const { error } = await supabase

@@ -139,16 +139,29 @@ function toShowRow(event, artistId) {
   }
 }
 
+// Marks the artist as checked regardless of outcome — a genuine "no
+// match" or "zero events" result is still a completed check, and should
+// stop the "Check for shows" CTA from re-showing for it every reload.
+async function markChecked(artistId) {
+  const { error } = await supabase
+    .from('artists')
+    .update({ ticketmaster_checked_at: new Date().toISOString() })
+    .eq('id', artistId)
+  if (error) throw error
+}
+
 async function ingestArtist(artist) {
   const { attractionId } = await resolveAttraction(artist)
   if (!attractionId) {
     console.log(`  ${artist.name}: no Ticketmaster attraction match, skipping`)
+    await markChecked(artist.id)
     return { fetched: 0, upserted: 0 }
   }
 
   const events = await fetchEvents(attractionId)
   if (events.length === 0) {
     console.log(`  ${artist.name}: 0 upcoming events`)
+    await markChecked(artist.id)
     return { fetched: 0, upserted: 0 }
   }
 
@@ -158,6 +171,7 @@ async function ingestArtist(artist) {
     .upsert(rows, { onConflict: 'source,source_event_id' })
 
   if (error) throw error
+  await markChecked(artist.id)
 
   console.log(`  ${artist.name}: upserted ${rows.length} shows`)
   return { fetched: events.length, upserted: rows.length }

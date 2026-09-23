@@ -81,7 +81,7 @@ export default function Wishlist({ userId, onChange }) {
   async function handleCheckForShows() {
     setChecking(true)
     try {
-      for (const artist of wishlist.filter((a) => !a.ticketmaster_id)) {
+      for (const artist of wishlist.filter((a) => !a.ticketmaster_checked_at)) {
         try {
           await ingestArtistFromTicketmaster(artist)
         } catch (err) {
@@ -98,7 +98,7 @@ export default function Wishlist({ userId, onChange }) {
 
   const onWishlist = new Set(wishlist.map((artist) => artist.id))
   const trimmedQuery = query.trim()
-  const unchecked = wishlist.filter((artist) => !artist.ticketmaster_id)
+  const unchecked = wishlist.filter((artist) => !artist.ticketmaster_checked_at)
 
   return (
     <div>

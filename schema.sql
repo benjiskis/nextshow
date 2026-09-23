@@ -1,5 +1,5 @@
 -- Concert Tour Wishlist App — Database Schema
--- Version: 1.0.4
+-- Version: 1.0.5
 -- Target: Supabase (Postgres)
 -- Notes: Auth is Firebase (Google OAuth popup), NOT Supabase Auth.
 --        `firebase_uid` is the link between a Firebase-authenticated
@@ -41,12 +41,19 @@ create table group_members (
 -- One row per artist, cross-referenced by external source IDs
 -- so ingestion jobs can upsert without re-matching by name.
 create table artists (
-  id                uuid primary key default gen_random_uuid(),
-  name              text not null,
-  jambase_id        text unique,
-  ticketmaster_id   text unique,
-  bandsintown_id    text unique,
-  logo_url          text,
+  id                       uuid primary key default gen_random_uuid(),
+  name                     text not null,
+  jambase_id               text unique,
+  ticketmaster_id          text unique,
+  bandsintown_id           text unique,
+  logo_url                 text,
+  -- Set only once a source's *events* have actually been fetched for this
+  -- artist (success or confirmed-empty) — NOT when the *_id is resolved.
+  -- Adding an artist via the live Ticketmaster typeahead resolves
+  -- ticketmaster_id immediately but doesn't fetch its shows, so this is
+  -- what "Check for shows" (Wishlist.jsx) actually keys off of.
+  ticketmaster_checked_at  timestamptz,
+  jambase_checked_at       timestamptz,
   created_at        timestamptz not null default now()
 );
 
