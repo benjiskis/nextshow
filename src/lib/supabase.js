@@ -304,6 +304,130 @@ export async function getUserDisplayName(userId) {
   return data.display_name
 }
 
+// ─── Groups ──────────────────────────────────────────────
+
+// Inserts the group row and adds the creator as its first member in one
+// call — callers never need a separate joinGroupById for the creator.
+export async function createGroup(name, creatorUserId) {
+  const { data, error } = await supabase
+    .from('groups')
+    .insert({ name: name.trim(), created_by: creatorUserId })
+    .select()
+    .single()
+
+  if (error) throw error
+
+  const { error: memberError } = await supabase
+    .from('group_members')
+    .insert({ group_id: data.id, user_id: creatorUserId })
+  if (memberError) throw memberError
+
+  return data
+}
+
+export async function getGroup(groupId) {
+  const { data, error } = await supabase.from('groups').select('*').eq('id', groupId).single()
+  if (error) throw error
+  return data
+}
+
+export async function getMyGroups(userId) {
+  const { data, error } = await supabase
+    .from('group_members')
+    .select('groups (id, name, created_at)')
+    .eq('user_id', userId)
+
+  if (error) throw error
+  return data.map((row) => row.groups).filter(Boolean)
+}
+
+export async function getGroupMembers(groupId) {
+  const { data, error } = await supabase
+    .from('group_members')
+    .select('users (id, display_name)')
+    .eq('group_id', groupId)
+
+  if (error) throw error
+  return data.map((row) => row.users).filter(Boolean)
+}
+
+export async function joinGroupById(groupId, userId) {
+  const { error } = await supabase
+    .from('group_members')
+    .upsert({ group_id: groupId, user_id: userId }, { onConflict: 'group_id,user_id' })
+  if (error) throw error
+}
+
+// Backs the "Add as Crew" CTA on the shared saved-shows link. If the
+// two users already share any group, reuses it rather than proliferating
+// a new 2-person group every time someone clicks it again.
+export async function findOrCreateFriendGroup(ownerUserId, viewerUserId) {
+  const { data: ownerGroups, error: e1 } = await supabase
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', ownerUserId)
+  if (e1) throw e1
+  const ownerGroupIds = ownerGroups.map((row) => row.group_id)
+
+  if (ownerGroupIds.length > 0) {
+    const { data: shared, error: e2 } = await supabase
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', viewerUserId)
+      .in('group_id', ownerGroupIds)
+      .limit(1)
+    if (e2) throw e2
+    if (shared.length > 0) return { groupId: shared[0].group_id, created: false }
+  }
+
+  const [ownerName, viewerName] = await Promise.all([
+    getUserDisplayName(ownerUserId),
+    getUserDisplayName(viewerUserId),
+  ])
+  const group = await createGroup(`${ownerName} & ${viewerName}`, viewerUserId)
+  await joinGroupById(group.id, ownerUserId)
+  return { groupId: group.id, created: true }
+}
+
+// Upcoming shows where 2+ of the given member ids have said "I'm in" —
+// the at-a-glance payoff of Groups: overlap between members' saved
+// shows, instead of clicking into each person's list individually.
+// Returns groups annotated with interestedUserIds (not names — the
+// caller already has each member's display_name from getGroupMembers).
+export async function getMutuallyStarredShows(memberIds) {
+  if (memberIds.length < 2) return []
+
+  const { data, error } = await supabase
+    .from('show_interest')
+    .select('user_id, shows (*, artists (name, logo_url))')
+    .eq('vote', 'yes')
+    .in('user_id', memberIds)
+
+  if (error) throw error
+
+  const now = new Date().toISOString()
+  const byShowId = new Map()
+  for (const row of data) {
+    if (!row.shows || row.shows.event_date < now) continue
+    if (!byShowId.has(row.shows.id)) {
+      byShowId.set(row.shows.id, { show: row.shows, userIds: new Set() })
+    }
+    byShowId.get(row.shows.id).userIds.add(row.user_id)
+  }
+
+  const groups = groupShowsBySameEvent([...byShowId.values()].map((entry) => entry.show))
+
+  return groups
+    .map((group) => {
+      const userIds = new Set()
+      for (const showId of group.showIds) {
+        for (const userId of byShowId.get(showId)?.userIds ?? []) userIds.add(userId)
+      }
+      return { ...group, interestedUserIds: [...userIds] }
+    })
+    .filter((group) => group.interestedUserIds.length >= 2)
+}
+
 // The same real-world concert is ingested once per source (Ticketmaster,
 // Jambase, ...) with no shared ID between them, so we match on artist +
 // a tight time window instead. 6h comfortably covers door-time-vs-setlist

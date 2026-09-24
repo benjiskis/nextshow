@@ -11,6 +11,7 @@ import {
   setShowSaved,
   getInterestedUsersByShow,
   withInterestedUsers,
+  findOrCreateFriendGroup,
 } from '../lib/supabase'
 import ShowCard from './ShowCard.jsx'
 import Login from './Login.jsx'
@@ -21,6 +22,7 @@ export default function SharedSavedShows({ userId, viewerUser, viewerDbUser, aut
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [savedIds, setSavedIds] = useState(new Set())
+  const [crewState, setCrewState] = useState('idle') // idle | adding | added
 
   useEffect(() => {
     Promise.all([getUserDisplayName(userId), getSavedShows(userId)])
@@ -60,6 +62,19 @@ export default function SharedSavedShows({ userId, viewerUser, viewerDbUser, aut
     }
   }
 
+  async function handleAddCrew() {
+    setCrewState('adding')
+    try {
+      await findOrCreateFriendGroup(userId, viewerDbUser.id)
+      setCrewState('added')
+    } catch (err) {
+      console.error('Failed to add as crew:', err)
+      setCrewState('idle')
+    }
+  }
+
+  const isOwnLink = viewerDbUser?.id === userId
+
   return (
     <div className="app">
       <header className="app-header">
@@ -75,6 +90,15 @@ export default function SharedSavedShows({ userId, viewerUser, viewerDbUser, aut
             <a className="btn-link" href={window.location.pathname}>
               Go to my dashboard →
             </a>
+            {!isOwnLink && (
+              <button className="btn-link" onClick={handleAddCrew} disabled={crewState === 'adding'}>
+                {crewState === 'added'
+                  ? '🤝 Added to crew!'
+                  : crewState === 'adding'
+                    ? 'Adding…'
+                    : '🤝 Add as Crew'}
+              </button>
+            )}
           </>
         ) : (
           <>

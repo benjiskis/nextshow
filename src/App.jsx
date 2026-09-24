@@ -5,7 +5,9 @@ import { ensureUserRow } from './lib/supabase'
 import Login from './components/Login.jsx'
 import Wishlist from './components/Wishlist.jsx'
 import Shows from './components/Shows.jsx'
+import Groups from './components/Groups.jsx'
 import SharedSavedShows from './components/SharedSavedShows.jsx'
+import JoinGroup from './components/JoinGroup.jsx'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -13,7 +15,9 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [wishlistVersion, setWishlistVersion] = useState(0)
 
-  const sharedUserId = new URLSearchParams(window.location.search).get('saved')
+  const params = new URLSearchParams(window.location.search)
+  const sharedUserId = params.get('saved')
+  const joinGroupId = params.get('joinGroup')
 
   useEffect(() => {
     const unsubscribe = watchAuthState(async (firebaseUser) => {
@@ -28,6 +32,17 @@ export default function App() {
     })
     return unsubscribe
   }, [])
+
+  if (joinGroupId) {
+    return (
+      <JoinGroup
+        groupId={joinGroupId}
+        viewerUser={user}
+        viewerDbUser={dbUser}
+        authLoading={loading}
+      />
+    )
+  }
 
   if (sharedUserId) {
     return (
@@ -53,6 +68,10 @@ export default function App() {
           <section className="section">
             <h2>Wishlist</h2>
             <Wishlist userId={dbUser.id} onChange={() => setWishlistVersion((v) => v + 1)} />
+          </section>
+          <section className="section">
+            <h2>Groups</h2>
+            <Groups userId={dbUser.id} />
           </section>
           <section className="section">
             <h2>Upcoming shows</h2>
