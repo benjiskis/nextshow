@@ -3,6 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { fetchTicketmasterShows } from './ticketmaster'
+import { vendorFromUrl } from './vendor'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -193,6 +194,116 @@ export async function getUpcomingShows(userId) {
   return groupShowsBySameEvent(data)
 }
 
+// Which of the given shows.id values this user has already saved
+// ("yes" interest). Returns a Set for cheap membership checks against a
+// group's showIds — a group counts as saved if any of its member rows
+// (any source) are in the set.
+export async function getSavedShowIds(userId, showIds) {
+  if (showIds.length === 0) return new Set()
+
+  const { data, error } = await supabase
+    .from('show_interest')
+    .select('show_id')
+    .eq('user_id', userId)
+    .eq('vote', 'yes')
+    .in('show_id', showIds)
+
+  if (error) throw error
+  return new Set(data.map((row) => row.show_id))
+}
+
+// Saves/un-saves a grouped show — writes (or clears) show_interest for
+// every underlying shows.id in the group, not just one, so the saved
+// state stays consistent regardless of which source's row a future
+// query happens to associate with the group.
+export async function setShowSaved(userId, showIds, saved) {
+  if (saved) {
+    const rows = showIds.map((showId) => ({ show_id: showId, user_id: userId, vote: 'yes' }))
+    const { error } = await supabase
+      .from('show_interest')
+      .upsert(rows, { onConflict: 'show_id,user_id' })
+    if (error) throw error
+  } else {
+    const { error } = await supabase
+      .from('show_interest')
+      .delete()
+      .eq('user_id', userId)
+      .in('show_id', showIds)
+    if (error) throw error
+  }
+}
+
+// A user's saved ("yes") upcoming shows — used by the shareable read-only
+// link (?saved=<userId>), so it's not scoped to any particular wishlist:
+// someone's saved list can include shows from artists they never even
+// added, if e.g. a friend's shared link led them to save one. Future-only,
+// same as getUpcomingShows — otherwise a show that's already started
+// would keep showing here (no date filter) after it had already dropped
+// off the normal dashboard (which does filter), which looked like the
+// vote had silently vanished.
+export async function getSavedShows(userId) {
+  const { data, error } = await supabase
+    .from('show_interest')
+    .select('shows (*, artists (name, logo_url))')
+    .eq('user_id', userId)
+    .eq('vote', 'yes')
+
+  if (error) throw error
+  const now = new Date().toISOString()
+  const rows = data.map((row) => row.shows).filter((show) => show && show.event_date >= now)
+  return groupShowsBySameEvent(rows)
+}
+
+// Everyone who's said "I'm in" (vote='yes') for any of the given
+// shows.id values, keyed by show_id — the friend-opt-in / "who's going"
+// layer. A group's interested-users list is every showId's entries
+// merged and deduped by user id (see withInterestedUsers).
+export async function getInterestedUsersByShow(showIds) {
+  if (showIds.length === 0) return new Map()
+
+  const { data, error } = await supabase
+    .from('show_interest')
+    .select('show_id, users (id, display_name)')
+    .eq('vote', 'yes')
+    .in('show_id', showIds)
+
+  if (error) throw error
+
+  const map = new Map()
+  for (const row of data) {
+    if (!row.users) continue
+    if (!map.has(row.show_id)) map.set(row.show_id, [])
+    map.get(row.show_id).push(row.users)
+  }
+  return map
+}
+
+// Annotates each grouped show with its deduped interestedUsers list —
+// a single vote gets written to every showId in a group (setShowSaved),
+// so the same person can appear under multiple showIds within one group.
+export function withInterestedUsers(groups, interestedByShow) {
+  return groups.map((group) => {
+    const seen = new Map()
+    for (const showId of group.showIds) {
+      for (const user of interestedByShow.get(showId) ?? []) {
+        seen.set(user.id, user)
+      }
+    }
+    return { ...group, interestedUsers: [...seen.values()] }
+  })
+}
+
+export async function getUserDisplayName(userId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('display_name')
+    .eq('id', userId)
+    .single()
+
+  if (error) throw error
+  return data.display_name
+}
+
 // The same real-world concert is ingested once per source (Ticketmaster,
 // Jambase, ...) with no shared ID between them, so we match on artist +
 // a tight time window instead. 6h comfortably covers door-time-vs-setlist
@@ -216,6 +327,11 @@ function groupShowsBySameEvent(rows) {
       (() => {
         const created = {
           id: row.id,
+          // Every underlying shows.id merged into this group — a vote on
+          // the group has to apply to all of them, since show_interest
+          // references a single shows.id and we don't know in advance
+          // which source's row a future query will pick as `id`.
+          showIds: [],
           artist_id: row.artist_id,
           artist: row.artists,
           event_date: row.event_date,
@@ -231,6 +347,7 @@ function groupShowsBySameEvent(rows) {
         return created
       })()
 
+    group.showIds.push(row.id)
     group.venue_name ??= row.venue_name
     group.city ??= row.city
     group.state ??= row.state
@@ -238,7 +355,18 @@ function groupShowsBySameEvent(rows) {
     group.latitude ??= row.latitude
     group.longitude ??= row.longitude
     if (rowTime < new Date(group.event_date).getTime()) group.event_date = row.event_date
-    if (row.ticket_url) group.links.push({ source: row.source, url: row.ticket_url })
+
+    // Dedupe by actual selling vendor (domain), not our internal
+    // `source` field — Ticketmaster's own API sometimes returns two
+    // events for the same real show when the venue sells through a
+    // different vendor (e.g. Red Rocks via AXS), and both would
+    // otherwise show up labeled "Tickets (Ticketmaster)".
+    if (row.ticket_url) {
+      const vendor = vendorFromUrl(row.ticket_url)
+      if (!group.links.some((link) => link.key === vendor.key)) {
+        group.links.push({ key: vendor.key, label: vendor.label, url: row.ticket_url })
+      }
+    }
   }
 
   return groups.sort((a, b) => a.event_date.localeCompare(b.event_date))

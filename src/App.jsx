@@ -5,12 +5,15 @@ import { ensureUserRow } from './lib/supabase'
 import Login from './components/Login.jsx'
 import Wishlist from './components/Wishlist.jsx'
 import Shows from './components/Shows.jsx'
+import SharedSavedShows from './components/SharedSavedShows.jsx'
 
 export default function App() {
   const [user, setUser] = useState(null)
   const [dbUser, setDbUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [wishlistVersion, setWishlistVersion] = useState(0)
+
+  const sharedUserId = new URLSearchParams(window.location.search).get('saved')
 
   useEffect(() => {
     const unsubscribe = watchAuthState(async (firebaseUser) => {
@@ -25,6 +28,17 @@ export default function App() {
     })
     return unsubscribe
   }, [])
+
+  if (sharedUserId) {
+    return (
+      <SharedSavedShows
+        userId={sharedUserId}
+        viewerUser={user}
+        viewerDbUser={dbUser}
+        authLoading={loading}
+      />
+    )
+  }
 
   if (loading) return <p className="muted">Loading...</p>
 

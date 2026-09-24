@@ -320,6 +320,40 @@ a {
   padding: 0.15rem 0.6rem;
 }
 
+.show-interested {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.save-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.save-btn:hover {
+  color: var(--accent);
+}
+
+.save-btn.saved {
+  color: var(--accent);
+}
+
+.saved-only-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
 .ticket-link:hover {
   background: var(--accent);
   color: var(--accent-fg);

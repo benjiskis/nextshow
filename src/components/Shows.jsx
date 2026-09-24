@@ -1,20 +1,15 @@
-// Shows.jsx — v0.2.0
+// Shows.jsx — v0.3.0
 import { useEffect, useMemo, useState } from 'react'
-import { getUpcomingShows, updateUserLocation } from '../lib/supabase'
+import {
+  getUpcomingShows,
+  getSavedShowIds,
+  setShowSaved,
+  updateUserLocation,
+  getInterestedUsersByShow,
+  withInterestedUsers,
+} from '../lib/supabase'
 import { distanceMiles, requestLocation } from '../lib/geo'
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
-
-const sourceLabels = {
-  ticketmaster: 'Ticketmaster',
-  jambase: 'Jambase',
-  bandsintown: 'Bandsintown',
-}
+import ShowCard from './ShowCard.jsx'
 
 const RADIUS_OPTIONS = [
   { label: 'Any distance', value: null },
@@ -27,6 +22,9 @@ const RADIUS_OPTIONS = [
 export default function Shows({ user, refreshKey }) {
   const [shows, setShows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [savedIds, setSavedIds] = useState(new Set())
+  const [savedOnly, setSavedOnly] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [location, setLocation] = useState(
     user.latitude != null && user.longitude != null
       ? { latitude: user.latitude, longitude: user.longitude }
@@ -39,9 +37,39 @@ export default function Shows({ user, refreshKey }) {
   useEffect(() => {
     setLoading(true)
     getUpcomingShows(user.id)
-      .then(setShows)
+      .then(async (rows) => {
+        const allShowIds = rows.flatMap((show) => show.showIds)
+        const [saved, interested] = await Promise.all([
+          getSavedShowIds(user.id, allShowIds),
+          getInterestedUsersByShow(allShowIds),
+        ])
+        setShows(withInterestedUsers(rows, interested))
+        setSavedIds(saved)
+      })
       .finally(() => setLoading(false))
   }, [user.id, refreshKey])
+
+  function applySavedState(showIds, saved) {
+    setSavedIds((prev) => {
+      const next = new Set(prev)
+      for (const id of showIds) {
+        if (saved) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
+  }
+
+  async function handleToggleSave(show) {
+    const wasSaved = show.showIds.some((id) => savedIds.has(id))
+    applySavedState(show.showIds, !wasSaved)
+    try {
+      await setShowSaved(user.id, show.showIds, !wasSaved)
+    } catch (err) {
+      console.error('Failed to save show:', err)
+      applySavedState(show.showIds, wasSaved) // revert
+    }
+  }
 
   async function handleShareLocation() {
     setLocating(true)
@@ -57,6 +85,13 @@ export default function Shows({ user, refreshKey }) {
     }
   }
 
+  function handleCopyShareLink() {
+    const url = `${window.location.origin}${window.location.pathname}?saved=${user.id}`
+    navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   const showsWithDistance = useMemo(() => {
     if (!location) return shows.map((show) => ({ ...show, distance: null }))
     return shows.map((show) => ({
@@ -68,9 +103,9 @@ export default function Shows({ user, refreshKey }) {
     }))
   }, [shows, location])
 
-  const visibleShows = radius
-    ? showsWithDistance.filter((show) => show.distance == null || show.distance <= radius)
-    : showsWithDistance
+  const visibleShows = showsWithDistance
+    .filter((show) => !radius || show.distance == null || show.distance <= radius)
+    .filter((show) => !savedOnly || show.showIds.some((id) => savedIds.has(id)))
 
   return (
     <div>
@@ -100,46 +135,40 @@ export default function Shows({ user, refreshKey }) {
         {locationError && <span className="muted error-text">{locationError}</span>}
       </div>
 
+      <div className="location-bar">
+        <label className="saved-only-toggle">
+          <input
+            type="checkbox"
+            checked={savedOnly}
+            onChange={(e) => setSavedOnly(e.target.checked)}
+          />
+          Saved only
+        </label>
+        <button className="btn-link" onClick={handleCopyShareLink}>
+          {copied ? 'Link copied!' : 'Copy shareable link to my saved shows'}
+        </button>
+      </div>
+
       {loading ? (
         <p className="muted">Loading shows...</p>
       ) : visibleShows.length === 0 ? (
         <p className="muted">
           {shows.length === 0
             ? 'No upcoming shows yet. Add artists to your wishlist, then run the ingestion script.'
-            : 'No shows within that distance.'}
+            : savedOnly
+              ? 'No saved shows yet — click the star on a show to save it.'
+              : 'No shows within that distance.'}
         </p>
       ) : (
         <ul className="show-list">
           {visibleShows.map((show) => (
-            <li key={show.id} className="show-card">
-              {show.artist.logo_url && (
-                <img className="show-logo" src={show.artist.logo_url} alt="" width={44} height={44} />
-              )}
-              <div className="show-info">
-                <div className="show-artist">{show.artist.name}</div>
-                <div className="show-meta">
-                  {dateFormatter.format(new Date(show.event_date))}
-                  {show.venue_name && <> · {show.venue_name}</>}
-                  {(show.city || show.state) && (
-                    <> · {[show.city, show.state].filter(Boolean).join(', ')}</>
-                  )}
-                  {show.distance != null && <> · {Math.round(show.distance)} mi away</>}
-                </div>
-                <div className="show-links">
-                  {show.links.map((link) => (
-                    <a
-                      key={link.source}
-                      className="ticket-link"
-                      href={link.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Tickets ({sourceLabels[link.source] ?? link.source})
-                    </a>
-                  ))}
-                </div>
-              </div>
-            </li>
+            <ShowCard
+              key={show.id}
+              show={show}
+              saved={show.showIds.some((id) => savedIds.has(id))}
+              onToggleSave={() => handleToggleSave(show)}
+              viewerUserId={user.id}
+            />
           ))}
         </ul>
       )}
