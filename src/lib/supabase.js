@@ -234,7 +234,8 @@ export async function setShowSaved(userId, showIds, saved) {
 }
 
 // A user's saved ("yes") upcoming shows — used by the shareable read-only
-// link (?saved=<userId>), so it's not scoped to any particular wishlist:
+// profile link (?profile=<userId>), so it's not scoped to any particular
+// wishlist:
 // someone's saved list can include shows from artists they never even
 // added, if e.g. a friend's shared link led them to save one. Future-only,
 // same as getUpcomingShows — otherwise a show that's already started

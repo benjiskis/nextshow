@@ -6,7 +6,7 @@ import Login from './components/Login.jsx'
 import Wishlist from './components/Wishlist.jsx'
 import Shows from './components/Shows.jsx'
 import Groups from './components/Groups.jsx'
-import SharedSavedShows from './components/SharedSavedShows.jsx'
+import SharedProfile from './components/SharedProfile.jsx'
 import JoinGroup from './components/JoinGroup.jsx'
 
 export default function App() {
@@ -16,7 +16,7 @@ export default function App() {
   const [wishlistVersion, setWishlistVersion] = useState(0)
 
   const params = new URLSearchParams(window.location.search)
-  const sharedUserId = params.get('saved')
+  const sharedUserId = params.get('profile')
   const joinGroupId = params.get('joinGroup')
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function App() {
 
   if (sharedUserId) {
     return (
-      <SharedSavedShows
+      <SharedProfile
         userId={sharedUserId}
         viewerUser={user}
         viewerDbUser={dbUser}

@@ -86,7 +86,7 @@ export default function Shows({ user, refreshKey }) {
   }
 
   function handleCopyShareLink() {
-    const url = `${window.location.origin}${window.location.pathname}?saved=${user.id}`
+    const url = `${window.location.origin}${window.location.pathname}?profile=${user.id}`
     navigator.clipboard.writeText(url)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -145,7 +145,7 @@ export default function Shows({ user, refreshKey }) {
           Saved only
         </label>
         <button className="btn-link" onClick={handleCopyShareLink}>
-          {copied ? 'Link copied!' : 'Copy shareable link to my saved shows'}
+          {copied ? 'Link copied!' : 'Copy shareable link to my profile'}
         </button>
       </div>
 

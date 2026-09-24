@@ -1,7 +1,8 @@
 // ShowCard.jsx — v0.1.0
 // Presentational — shared by Shows.jsx (your dashboard, with the save
-// toggle) and SharedSavedShows.jsx (someone else's saved list, read-only:
-// no onToggleSave means the star doesn't render).
+// toggle), Groups.jsx (mutual-interest, read-only), and SharedProfile.jsx
+// (someone else's saved shows: no onToggleSave means the star doesn't
+// render until the viewer signs in).
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   weekday: 'short',

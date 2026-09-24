@@ -103,8 +103,8 @@ export default function Groups({ userId }) {
                     ) : (
                       <a
                         className="member-link"
-                        href={`${window.location.pathname}?saved=${m.id}`}
-                        title={`See ${m.display_name}'s starred shows`}
+                        href={`${window.location.pathname}?profile=${m.id}`}
+                        title={`See ${m.display_name}'s wishlist and starred shows`}
                       >
                         {m.display_name}
                       </a>

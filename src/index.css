@@ -214,6 +214,27 @@ a {
   color: var(--danger);
 }
 
+.chip-add {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border-radius: 999px;
+}
+
+.chip-add:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.chip-added {
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
 /* Shows */
 
 .location-bar {
